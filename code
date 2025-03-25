@@ -1,0 +1,217 @@
+#To display the outputs of all cells 
+from IPython.core.interactiveshell import InteractiveShell
+InteractiveShell.ast_node_interactivity = "all"
+
+#importing libraries
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import wordcloud as wc
+from textblob import TextBlob
+import warnings
+warnings.filterwarnings('ignore')
+
+#importing libraries
+import matplotlib.pyplot as plt
+import re
+import nltk
+nltk.download('stopwords')
+from nltk.corpus import stopwords
+from nltk.stem.porter import PorterStemmer
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.model_selection import train_test_split # function for splitting data to train and test sets
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.metrics import roc_auc_score,accuracy_score
+from wordcloud import WordCloud
+from sklearn.metrics import confusion_matrix
+
+# Import data and transform tsv file
+df = pd.read_csv('amazon_alexa.tsv',delimiter='\t',quoting = 3)
+
+#Exploring the data
+#diplaying only the head data from the file
+df.head()
+
+#displaying the shape of the data set
+print("The Shape of dataset", df.shape)
+
+#displaying column names
+df.keys()
+
+#calling describe to display the series of rating and feedback values
+df.describe()
+
+#Exploring the data Visualization
+#Visualizing the Rating
+sns.countplot(x='rating',data=df,palette='muted');
+
+#Visualizing the Feedback 
+sns.countplot(x='feedback',data=df,palette='muted');
+
+#Distribution of Variation
+plt.rcParams["figure.figsize"] = (20,10)
+df.groupby(['variation']).feedback.value_counts().plot(kind='bar')
+
+#Distribution of Rating in Histograms
+df['rating'].hist(bins = 5)
+
+#Sentiment polarity and subjectivity detection
+polarity=[] # list which will contain the polarity of the comments
+subjectivity=[] # list which will contain the subjectivity of the comments
+for i in df['verified_reviews'].values:
+    try:
+        analysis =TextBlob(i)
+        polarity.append(analysis.sentiment.polarity)
+        subjectivity.append(analysis.sentiment.subjectivity)
+        
+    except:
+        polarity.append(0)
+        subjectivity.append(0)
+
+#calling polarity 
+df['polarity']=polarity
+
+#calling subjectivity
+df['subjectivity']=subjectivity
+
+#Displaying All positive reviews
+df[df.polarity>0].head(10)
+
+#Displaying all negative reviews
+df[df.polarity<0].head(10)
+
+#Displaying Neutral Reviews
+df[df.polarity==0].head(10)
+
+#displaying reviews which consist of more subject
+df[df.subjectivity>0.8].head(10)
+
+#Displaying extremely positive reviews
+df[df.polarity>0.75].head(10)
+
+#Displaying extremely negative reviews
+df[df.polarity<-0.25].head(10)
+
+#Assigning polarity values as 0,1,-1 for neutral,positive and negative reviews
+df['polarity'][df.polarity==0]= 0
+df['polarity'][df.polarity > 0]= 1
+df['polarity'][df.polarity < 0]= -1
+
+#Displaying first ten values from the dataset
+df.head(10)
+
+#Displaying data with less subjectivity reviews
+df[df.subjectivity<1].head(10)
+
+#Displaying data of neutral Subjectivity
+df[df.subjectivity==1].head(10)
+
+#plotting bar graph of polarity
+df.polarity.value_counts().plot.bar()
+df.polarity.value_counts()
+
+#Assigning subjectivity in values of 0,0.5,1 for less,neutral and more subject
+df['subjectivity'][df.subjectivity>0.5]=1
+df['subjectivity'][df.subjectivity<0.5]=0
+
+#plotting bar graph of subjectivity
+df.subjectivity.value_counts().plot.bar()
+df.subjectivity.value_counts()
+
+#Defining Wordcloud 
+def wc(data,bgcolor,title):
+    plt.figure(figsize = (50,50))
+    wc = WordCloud(background_color = bgcolor, max_words = 2000, random_state=42, max_font_size = 50)
+    wc.generate(' '.join(data))
+    plt.imshow(wc)
+    plt.axis('off')
+
+#Visualizing wordcloud with positive reviews that contain common words
+wc(df['verified_reviews'][df.polarity>0.75],'black','common words')
+
+##Visualizing wordcloud with negative reviews that contain common words
+wc(df['verified_reviews'][df.polarity<0],'blue','common words')
+
+#Defining corpus
+corpus = []
+for i in range(0, 3150):
+
+    review = re.sub('[^a-zA-Z]', ' ', df['verified_reviews'][i])
+
+    review = review.lower()
+    
+    review = review.split()
+    
+    ps = PorterStemmer()
+    
+    review = [ps.stem(word) for word in review if not word in set(stopwords.words('english'))]
+    
+    review = ' '.join(review)
+ 
+    corpus.append(review)
+
+#Calling Corpus
+corpus
+
+#Creating Bag of words model
+#Defining Countvectorizer to convert a collection of text documents to a matrix of token counts
+cv = CountVectorizer()
+X = cv.fit_transform(corpus).toarray()
+y = df.iloc[:,4].values
+
+#Displaying most frequently occuring words
+cv = CountVectorizer(stop_words = 'english')
+words = cv.fit_transform(df.verified_reviews)
+sum_words = words.sum(axis=0)
+
+
+words_freq = [(word, sum_words[0, idx]) for word, idx in cv.vocabulary_.items()]
+words_freq = sorted(words_freq, key = lambda x: x[1], reverse = True)
+frequency = pd.DataFrame(words_freq, columns=['word', 'freq'])
+
+plt.style.use('fivethirtyeight')
+color = plt.cm.ocean(np.linspace(0, 1, 20))
+frequency.head(50).plot(x='word', y='freq', kind='bar', figsize=(15, 6), color = color)
+plt.title("Most Frequently Occuring Words - Top 50")
+plt.show()
+
+#Splitting the dataset into the Training set and Test set
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.20, random_state = 0)
+
+# MultinomialNB 
+
+# Fitting Naive Bayes to the Training set  and predicting the test results
+from sklearn.pipeline import make_pipeline
+model=MultinomialNB()
+model.fit(X_train,y_train)
+labels=model.predict(X_test)
+roc_auc_score(y_test,model.predict_proba(X_test)[:,1])
+
+#Assigning confusion matrix as mat
+from sklearn.metrics import confusion_matrix
+mat = confusion_matrix(y_test, labels)
+mat
+
+#Visualizing heatmap graph
+ax=plt.subplot()
+sns.heatmap(mat,annot=True,ax=ax,fmt='g')
+ax.set_xlabel('Predicted',fontsize=20)
+ax.xaxis.set_label_position('top')
+ax.xaxis.set_ticklabels(['negative','positive'],fontsize=10)
+ax.xaxis.tick_top()
+ax.set_ylabel('True',fontsize=20)
+ax.yaxis.set_ticklabels(['negative','positive'],fontsize=10)
+plt.show()
+
+# SVM
+
+#importing Support vector machine
+from sklearn import svm
+
+#Fitting svm model according to training data
+sv=svm.SVC()
+sv.fit(X_train,y_train)
+y_pred_sv=sv.predict(X_test)
+
+#Displaying accuracy 
+accuracy_score(y_test,y_pred_sv)
